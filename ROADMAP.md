@@ -31,12 +31,13 @@ Hosted on GitHub Pages at https://meme.zacsvae.com, with serverless signaling th
 | Nudity check | NSFWJS (TensorFlow.js, MobileNetV2) self-hosted in `public/vendor/`, runs on the device on the preview screen (~30 ms/photo after a one-time ~6 MB download). **Changed from the GDD: flagged photos are always blocked, with no override and regardless of deck.** The host also refuses any photo a phone reports as flagged. If the model can't load, the player is told the photos weren't checked. |
 | Versioned deck | Captions moved to `public/decks/base.json` (`{id, text, rating, pack, lang}` per card, deck `version`). Fetched network-first, so editing the JSON and pushing updates every game without an app change. Only the host needs the deck: card text travels in game state. Deck v2 moved one card to Spicy. |
 | Card stats | Host counts dealt / played / won per card and sends one anonymous record at game end to `STATS_URL` (no photos, names or write-ins). Off until the Worker is deployed. `server.js` also accepts `/stats` for self-hosting. |
-| Managed relay | `cloudflare/worker.js` issues 4-hour Cloudflare TURN credentials (`/ice`), stores stats in KV (`/stats`) and sums them (`/summary`). Ready to deploy (`cloudflare/README.md`); the app uses it once `public/env.js` has the URLs. |
+| Card stats Worker | `cloudflare/worker.js` stores one anonymous record per game in KV (`/stats`) and sums them (`/summary`). Runs on the Cloudflare free plan (no card). `npm run setup:worker` deploys it with no questions and fills in `public/env.js`. |
+| Relay (TURN) | **Dropped:** Cloudflare TURN needs billing. Players on unusually strict networks (some carriers, corporate or hotel Wi-Fi) may not connect; everyone else connects directly over STUN. Self-hosters can still pass a TURN server via `ICE_SERVERS` to `server.js`. |
 | Privacy & contact | `public/privacy.html`: purpose, retention, no server storage, nudity rule, reporting, stats, contact via GitHub issues. Linked from the age gate, home and photo preview. |
 | Service worker | Workbox 7: app files network-first, deck network-first, safety model and CDN libraries cache-first, fonts stale-while-revalidate; hand-written fallback if Workbox can't load. |
 | HTTPS | Enforced on meme.zacsvae.com. |
 
-Still to do from phase 2: deploy the Cloudflare Worker (needs your Cloudflare login) and fill in `public/env.js`.
+Still to do from phase 2: run `npm run setup:worker` (needs your Cloudflare login) and push.
 
 ## Phase 3 — Native apps (Expo / React Native)
 
@@ -60,4 +61,4 @@ Still to do from phase 2: deploy the Cloudflare Worker (needs your Cloudflare lo
 
 - Owner hidden by default? → Classic shows the owner after judging; Roulette hides it until the result.
 - Can the judge's own photo come up? → Yes; the judge can't guess it and there's no bonus.
-- Remote play over mobile data? → Works with STUN; TURN is opt-in via `ICE_SERVERS`.
+- Remote play over mobile data? → Works with STUN for most networks; no TURN relay on the hosted site.

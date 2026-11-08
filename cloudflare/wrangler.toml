@@ -8,6 +8,6 @@ ALLOWED_ORIGINS = "https://meme.zacsvae.com,http://localhost:8080"
 # Create with: npx wrangler kv namespace create STATS   (then paste the id below)
 [[kv_namespaces]]
 binding = "STATS"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "be3fbd4665c94cbd81463a578f30a55c"
 
-# Secrets (never commit these): npx wrangler secret put TURN_KEY_ID / TURN_KEY_API_TOKEN / SUMMARY_TOKEN
+# Secret (never commit it): npx wrangler secret put SUMMARY_TOKEN   (setup.mjs does this for you)

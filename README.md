@@ -43,10 +43,10 @@ GitHub Pages only serves static files, so there the app signals through a public
 | `public/decks/base.json` | 400 original captions tagged family / standard / spicy. Edit and push to update every game; bump `version`. |
 | `public/cards.js` | Loads the deck JSON. |
 | `public/vendor/nsfwjs/` | On-device nudity classifier (NSFWJS, MIT). Flagged photos are always blocked. |
-| `public/env.js` | Optional service URLs (managed TURN relay, card stats). Empty = off. |
+| `public/env.js` | Optional card-stats URL. Empty = off. |
 | `public/privacy.html` | Privacy & safety policy and contact. |
 | `public/sw.js`, `manifest.webmanifest`, `icon.svg` | PWA shell (Workbox service worker). |
-| `cloudflare/` | Optional Worker: TURN credentials, anonymous card stats. See its README. |
+| `cloudflare/` | Optional free-plan Worker for anonymous card stats (`npm run setup:worker`). |
 
 ## Testing on one computer
 

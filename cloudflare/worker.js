@@ -1,4 +1,4 @@
-// Meme Roulette helper Worker. GET /ice: short-lived Cloudflare TURN credentials. POST /stats: one anonymous record per game.
+// Meme Roulette stats Worker (Cloudflare free plan). POST /stats: one anonymous record per game.
 // GET /summary?token=...: totals per card (dealt / played / won / win rate). Never receives photos, names or write-in text.
 const json = (b, h = {}, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json', ...h } });
 const int = v => Number.isInteger(v) && v >= 0 && v < 1000 ? v : 0;
@@ -24,12 +24,6 @@ export default {
     }
     if (!allowed) return json({ error: 'forbidden' }, cors, 403);
 
-    if (u.pathname === '/ice' && req.method === 'GET') {
-      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate`, { method: 'POST', headers: { authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify({ ttl: 4 * 3600 }) });
-      if (!r.ok) return json({ error: 'turn unavailable' }, cors, 502);
-      const { iceServers } = await r.json();
-      return json({ iceServers: Array.isArray(iceServers) ? iceServers : [iceServers] }, { ...cors, 'cache-control': 'no-store' });
-    }
     if (u.pathname === '/stats' && req.method === 'POST') {
       const raw = await req.text(); if (raw.length > 64 * 1024) return json({ error: 'too large' }, cors, 413);
       let b; try { b = JSON.parse(raw); } catch { return json({ error: 'bad json' }, cors, 400); }

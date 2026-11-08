@@ -1,5 +1,4 @@
 // WebRTC mesh. Signaling goes through our own server when present (server.js), else a public MQTT broker (static hosting, e.g. GitHub Pages).
-import { ICE_URL } from './env.js';
 // JSON control messages + chunked binary photos travel on one data channel per peer; signaling never carries game data or photos.
 const CHUNK = 64000, PIDLEN = 16, enc = new TextEncoder(), dec = new TextDecoder();
 const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
@@ -55,8 +54,7 @@ export class Net {
   constructor(id, h) { Object.assign(this, { id, h, pcs: new Map(), ch: new Map(), q: new Map(), rx: new Map(), ice: [], closed: false }); }
   async connect(code, create) {
     const cfg = await fetch('config', { cache: 'no-store' }).then(r => r.ok && r.headers.get('content-type')?.includes('json') ? r.json() : null).catch(() => null);
-    const managed = ICE_URL ? await fetch(ICE_URL, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null) : null;
-    this.ice = managed?.iceServers?.length ? [...DEFAULT_ICE, ...managed.iceServers] : cfg?.iceServers || DEFAULT_ICE; this.code = code; this.create = create;
+    this.ice = cfg?.iceServers || DEFAULT_ICE; this.code = code; this.create = create;
     this.s = cfg ? new WsSig(this) : new MqttSig(this);
   }
   sig(m) {
