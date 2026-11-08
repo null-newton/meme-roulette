@@ -2,3 +2,5 @@ node_modules/
 .claude/
 *.pem
 data/
+cloudflare/summary-token.txt
+cloudflare/.wrangler/

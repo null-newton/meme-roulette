@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2026-10-01"
 
 [vars]
-ALLOWED_ORIGINS = "https://meme.zacsvae.com,http://meme.zacsvae.com,http://localhost:8080"
+ALLOWED_ORIGINS = "https://meme.zacsvae.com,http://localhost:8080"
 
 # Create with: npx wrangler kv namespace create STATS   (then paste the id below)
 [[kv_namespaces]]

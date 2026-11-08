@@ -4,6 +4,11 @@
   "private": true,
   "description": "Party game: caption your friends' real photos. PWA + WebRTC peer-to-peer, tiny signaling server.",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "ws": "^8.18.0" }
+  "scripts": {
+    "start": "node server.js",
+    "setup:worker": "node cloudflare/setup.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
 }

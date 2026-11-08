@@ -8,10 +8,20 @@ One small Cloudflare Worker gives the static site two things it can't do alone:
 
 The game works without it; it only adds these extras.
 
-## Deploy
+## Deploy (automatic)
 
 1. In the Cloudflare dashboard: **Realtime → TURN Server → Create**. Note the *Turn Token ID* and *API Token*.
-2. From this folder:
+2. From the repo root:
+
+```bash
+npm run setup:worker
+```
+
+It asks for those two values, then checks them, signs you in to Cloudflare (browser) if needed, creates the KV namespace, deploys the Worker, stores the secrets, tests `/ice` and `/stats`, and writes the URLs into `public/env.js`. Commit and push `public/env.js` and `cloudflare/wrangler.toml` afterwards to go live. Safe to re-run.
+
+## Deploy (manual)
+
+From this folder:
 
 ```bash
 npx wrangler login
