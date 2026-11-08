@@ -14,7 +14,7 @@ const STATUS = { joined: 'Joined', choosing: 'Choosing photos', ready: 'Ready' }
 
 const A = { id: null, s: null, net: null, host: null, offset: 0, photos: new Map(), mine: new Set(), flagged: new Set(), sent: new Map(), seen: '', mig: 0, pendingSave: null, bip: null };
 const urlRoom = new URLSearchParams(location.search).get('room')?.toUpperCase() || '';
-const L = { view: ls.get('age17') ? 'home' : 'age', name: ls.get('name') || '', avatar: ls.get('avatar') || AVATARS[Math.random() * AVATARS.length | 0], code: urlRoom, status: 'joined', sel: -1, wtext: '', jv: 0, vv: 0, all: [], pick: [], sheet: null, menuPid: null, toast: '', busy: '', qr: false, stash: 0, consent: null, late: false, blocked: false };
+const L = { view: ls.get('age17') ? 'home' : 'age', name: ls.get('name') || '', avatar: ls.get('avatar') || AVATARS[Math.random() * AVATARS.length | 0], code: urlRoom, invite: !!urlRoom, status: 'joined', sel: -1, wtext: '', jv: 0, vv: 0, all: [], pick: [], sheet: null, menuPid: null, toast: '', busy: '', qr: false, stash: 0, consent: null, late: false, blocked: false };
 const hnow = () => Date.now() + A.offset;
 const me = () => A.s?.players[A.id];
 const isHost = () => !!A.host;
@@ -129,7 +129,7 @@ function leave(silent) {
   const net = A.net, host = A.host; setTimeout(() => net?.close(), silent ? 0 : 300); host?.stop(); clearTimeout(A.mig); A.migOn = false;
   for (const p of A.photos.values()) URL.revokeObjectURL(p.url);
   A.photos.clear(); A.mine.clear(); A.flagged.clear(); A.sent.clear(); Object.assign(A, { s: null, host: null, net: null });
-  Object.assign(L, { view: 'home', sheet: null, status: 'joined', code: '', all: [], pick: [], qr: false });
+  Object.assign(L, { view: 'home', sheet: null, status: 'joined', code: '', invite: false, all: [], pick: [], qr: false });
   history.replaceState(null, '', location.pathname); render();
 }
 function hostLeave() {
@@ -201,9 +201,9 @@ function home() {
   <p class="tag">Caption your friends' real photos. Funniest card wins.</p>
   <label class="lbl">Nickname</label><input id="name" maxlength="16" placeholder="Your name" value="${esc(L.name)}" autocomplete="nickname">
   <label class="lbl">Avatar</label>${avatarRow()}
-  <button class="btn primary big" data-act="create">Create game</button>
+  ${L.invite ? `<button class="btn primary big" data-act="join">Join room ${esc(L.code)}</button>` : `<button class="btn primary big" data-act="create">Create game</button>
   <div class="joinrow"><input id="code" maxlength="6" placeholder="ROOM CODE" value="${esc(L.code)}" autocapitalize="characters" autocomplete="off"><button class="btn" data-act="join">Join</button></div>
-  <p class="hint">Got a QR code? Scan it with your camera app.</p>
+  <p class="hint">Got a QR code? Scan it with your camera app.</p>`}
   ${A.bip ? '<button class="btn ghost" data-act="install">📲 Install app</button>' : ios ? '<p class="hint">📲 Install: tap <b>Share</b> → <b>Add to Home Screen</b></p>' : ''}
   <details class="how"><summary>How to play</summary><ol><li>Everyone adds 10–30 photos from their phone.</li><li>Each round, one photo appears on every phone.</li><li>Play your funniest caption card. The judge picks the winner.</li><li>First to the target score wins. In Roulette, guess whose photo it is for a bonus point.</li></ol></details>
   <p class="hint"><a href="privacy.html" class="lnk">Privacy &amp; safety</a> · No accounts, no ads. Photos never touch a server.</p>
@@ -400,7 +400,7 @@ async function share() {
 
 // ---------- events ----------
 const act = {
-  'age-ok': () => { ls.set('age17', true); L.view = 'home'; },
+  'age-ok': () => { ls.set('age17', true); L.view = 'home'; if (L.invite && L.name) return enter(L.code); },
   'age-no': () => { L.blocked = true; },
   avatar: d => { L.avatar = d.v; ls.set('avatar', d.v); },
   create: () => enter(''),
@@ -470,4 +470,4 @@ addEventListener('beforeinstallprompt', e => { e.preventDefault(); A.bip = e; re
 if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 window.__mr = { A, L }; // debug handle
 loadDeck().then(render).catch(() => toast("Couldn't load the caption cards. Check your connection."));
-if (urlRoom && L.view === 'home' && L.name && sessionStorage.getItem('mr-id-' + urlRoom)) enter(urlRoom); else render();
+if (urlRoom && L.view === 'home' && L.name) enter(urlRoom); else render();
