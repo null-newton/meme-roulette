@@ -1,0 +1,14 @@
+{
+  "name": "Meme Roulette",
+  "short_name": "Meme Roulette",
+  "description": "Caption your friends' real photos. Funniest card wins.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#15121f",
+  "theme_color": "#15121f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
