@@ -44,8 +44,14 @@ if (toml.includes('REPLACE_WITH_KV_NAMESPACE_ID')) {
 } else ok('Already set in wrangler.toml');
 
 step('Deploying the Worker');
-const dep = wrangler(['deploy']); if (dep.code !== 0) die('Deploy failed:\n' + dep.out);
-const url = (dep.out.match(/https:\/\/[a-z0-9.-]+\.workers\.dev/i) || [])[0]; if (!url) die('Deployed, but could not find the Worker URL in:\n' + dep.out);
+const findUrl = s => (s.match(/https:\/\/[a-z0-9.-]+\.workers\.dev/i) || [])[0];
+let dep = wrangler(['deploy']), url = dep.code === 0 && findUrl(dep.out);
+if (!url) { // first Worker on this account: wrangler must ask for a workers.dev subdomain, which needs the terminal
+  console.log('  Cloudflare needs a workers.dev subdomain for your account (one-time). Answer the prompt below:\n');
+  if (wrangler(['deploy'], true).code !== 0) die('Deploy failed. You can also create the subdomain in the Cloudflare dashboard (Workers & Pages), then re-run this script.');
+  dep = wrangler(['deploy']); url = dep.code === 0 && findUrl(dep.out);
+}
+if (!url) die('Deployed, but could not find the Worker URL in:\n' + dep.out);
 ok(url);
 
 step('Storing the summary token');
