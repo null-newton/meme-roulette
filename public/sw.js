@@ -1,8 +1,8 @@
 // Service worker (Workbox). App files: network first, so updates arrive at once; offline falls back to cache.
 // Decks: network first, so card fixes ship without a release. Safety model + CDN libs: cache first (large, versioned).
 // Photos are never cached here: they live only in page memory for the room.
-const V = 'v3', SHELL = ['./', 'index.html', 'style.css', 'app.js', 'net.js', 'engine.js', 'cards.js', 'photos.js', 'env.js', 'decks/base.json', 'privacy.html', 'manifest.webmanifest', 'icon.svg'];
-const skip = u => u.origin === location.origin && /\/(config|stats)$/.test(u.pathname);
+const V = 'v4', SHELL = ['./', 'index.html', 'style.css', 'app.js', 'net.js', 'engine.js', 'cards.js', 'photos.js', 'decks/base.json', 'privacy.html', 'manifest.webmanifest', 'icon.svg'];
+const skip = u => u.origin === location.origin && /\/config$/.test(u.pathname);
 self.addEventListener('install', e => e.waitUntil(caches.open('mr-app-' + V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => (/^mr-(app|decks)-/.test(k) && !k.endsWith(V)) || /^mr-v\d+$/.test(k)).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 let wb = null;

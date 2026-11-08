@@ -72,7 +72,7 @@ export class Host {
           s.subs[from] = { text: t }; if (s.settings.mode !== 'writein') p.writeins++;
         } else {
           const i = p.hand.indexOf(m.card); if (i < 0 || s.settings.mode === 'writein') return;
-          p.hand.splice(i, 1); s.subs[from] = { card: m.card, text: s.texts[m.card] }; this.stat(m.card, 'played');
+          p.hand.splice(i, 1); s.subs[from] = { card: m.card, text: s.texts[m.card] };
         }
         if (this.allIn()) this.toJudging(); break;
       }
@@ -119,7 +119,7 @@ export class Host {
   }
 
   startGame() {
-    const s = this.s; this.stats = {};
+    const s = this.s;
     Object.assign(s, { deck: shuffle(deckIds(eff(s).deck)), deckVer: DECK.id + '@' + DECK.version, texts: {}, used: [], queue: [], best: [], round: 0, drawn: {}, judgeIdx: -1, order: shuffle(Object.keys(s.players)) });
     for (const p of Object.values(s.players)) Object.assign(p, { score: 0, hand: [], swaps: 0, writeins: 0 });
     this.startRound();
@@ -130,13 +130,11 @@ export class Host {
     while (p.hand.length < HAND) {
       if (!s.deck.length) { const held = new Set(Object.values(s.players).flatMap(x => x.hand)); s.deck = shuffle(deckIds(eff(s).deck).filter(id => !held.has(id))); if (!s.deck.length) return; }
       const id = s.deck.pop(), c = DECK.byId.get(id); if (!c) continue;
-      p.hand.push(id); s.texts[id] = c.text; this.stat(id, 'dealt');
+      p.hand.push(id); s.texts[id] = c.text;
     }
   }
   // Drops text for cards no longer in any hand to keep state small
   pruneTexts() { const s = this.s, keep = new Set(Object.values(s.players).flatMap(p => p.hand)); for (const id in s.texts) if (!keep.has(id)) delete s.texts[id]; }
-  // Anonymous per-card counters for this game: dealt / played / won (no photos, names or write-in text)
-  stat(id, k) { if (!id) return; const c = (this.stats ||= {})[id] ||= { dealt: 0, played: 0, won: 0 }; c[k]++; }
   reachable(pid) { const o = this.s.pool[pid]; return !!o && (this.online(o) || this.app.photos.has(pid)); }
   // Picks a photo from the owner with the fewest draws so far, never repeating within a game
   drawOne() {
@@ -183,7 +181,7 @@ export class Host {
   }
   finish(sid, votes) {
     const s = this.s, w = s.cands.find(c => c.sid === sid);
-    if (w && s.players[w.by]) s.players[w.by].score++; if (w) this.stat(w.card, 'won');
+    if (w && s.players[w.by]) s.players[w.by].score++;
     const right = guessing(s) ? Object.keys(s.guesses).filter(i => s.guesses[i] === s.owner && s.players[i]) : [];
     right.forEach(i => s.players[i].score++);
     s.result = { sid: w?.sid || null, by: w?.by || null, text: w ? capText(w) : null, votes: votes || null, right };
@@ -191,7 +189,7 @@ export class Host {
     s.phase = 'result'; s.deadline = Date.now() + 5000; this.arm(s.deadline);
   }
   next() { const s = this.s, e = eff(s), top = Math.max(0, ...Object.values(s.players).map(p => p.score)); (e.fixed ? s.round >= e.rounds : top >= e.target) ? this.over() : this.startRound(); }
-  over() { clearTimeout(this.t); Object.assign(this.s, { phase: 'over', deadline: 0 }); if (this.stats && Object.keys(this.stats).length) this.app.reportStats?.(this.s.deckVer, this.stats); this.stats = null; }
+  over() { clearTimeout(this.t); Object.assign(this.s, { phase: 'over', deadline: 0 }); }
   // Recomputes presence from open channels; drops players gone > 60 s and unsticks phases
   check() {
     const s = this.s, now = Date.now(); let ch = false;

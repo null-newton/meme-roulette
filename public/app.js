@@ -2,7 +2,6 @@
 import { Net } from './net.js';
 import { Host, newState, eff, guessing, showOwner, canWrite, capText, active, livePool, MODES, MODE_INFO, MIN_PLAYERS, MIN_POOL } from './engine.js';
 import { loadDeck, DECK } from './cards.js';
-import { STATS_URL } from './env.js';
 import { processFiles, loadStash, saveStash, memeBlob, flagAll } from './photos.js';
 
 const $ = q => document.querySelector(q), root = $('#app');
@@ -27,7 +26,6 @@ function toast(msg) { L.toast = msg; render(); clearTimeout(toastT); toastT = se
 A.notify = (id, msg) => id === A.id ? toast(msg) : A.net.send(id, { t: 'toast', msg });
 A.broadcastState = () => { A.net.broadcast({ t: 'state', s: A.s, now: Date.now() }); afterState(); };
 A.pushPhoto = pushPhoto;
-A.reportStats = (deck, cards) => { if (!STATS_URL) return; try { navigator.sendBeacon(STATS_URL, JSON.stringify({ v: 1, deck, mode: A.s?.settings.mode, cards })); } catch {} };
 
 async function enter(code) {
   if (!L.name.trim()) return toast('Pick a nickname first');
