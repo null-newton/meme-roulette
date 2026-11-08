@@ -22,15 +22,21 @@ Goal of the GDD's MVP: friends laugh at captions on each other's real photos. Ev
 | Safety | Age gate, long-press Report / Hide for me / Remove from game, 3 reports removes a photo, host kick, write-ins limited to 80 chars with profanity masking and slur blocking, saving a meme asks the owner (10 s, no answer = no) |
 | PWA shell | Manifest, service worker (app shell cached), install button on Android, Add-to-Home-Screen how-to on iOS, haptics where supported |
 
-Not in phase 1: the on-device nudity classifier (needs a TensorFlow.js/ONNX model — phase 2).
+Hosted on GitHub Pages at https://meme.zacsvae.com, with serverless signaling through a public MQTT broker.
 
-## Phase 2 — Safety and polish
+## Phase 2 — Safety and polish ✅
 
-- On-device nudity check on the preview screen (TensorFlow.js or ONNX Runtime Web), extra confirmation, blocked with Family/Standard decks.
-- Workbox-based service worker, deck JSON served from a CDN with versioning.
-- Anonymous card stats (wins / never played) with no photo or write-in text.
-- Managed TURN credentials (Cloudflare/Twilio) issued by the signaling server.
-- Privacy policy page and published contact (store UGC requirement).
+| Item | What is built |
+| --- | --- |
+| Nudity check | NSFWJS (TensorFlow.js, MobileNetV2) self-hosted in `public/vendor/`, runs on the device on the preview screen (~30 ms/photo after a one-time ~6 MB download). **Changed from the GDD: flagged photos are always blocked, with no override and regardless of deck.** The host also refuses any photo a phone reports as flagged. If the model can't load, the player is told the photos weren't checked. |
+| Versioned deck | Captions moved to `public/decks/base.json` (`{id, text, rating, pack, lang}` per card, deck `version`). Fetched network-first, so editing the JSON and pushing updates every game without an app change. Only the host needs the deck: card text travels in game state. Deck v2 moved one card to Spicy. |
+| Card stats | Host counts dealt / played / won per card and sends one anonymous record at game end to `STATS_URL` (no photos, names or write-ins). Off until the Worker is deployed. `server.js` also accepts `/stats` for self-hosting. |
+| Managed relay | `cloudflare/worker.js` issues 4-hour Cloudflare TURN credentials (`/ice`), stores stats in KV (`/stats`) and sums them (`/summary`). Ready to deploy (`cloudflare/README.md`); the app uses it once `public/env.js` has the URLs. |
+| Privacy & contact | `public/privacy.html`: purpose, retention, no server storage, nudity rule, reporting, stats, contact via GitHub issues. Linked from the age gate, home and photo preview. |
+| Service worker | Workbox 7: app files network-first, deck network-first, safety model and CDN libraries cache-first, fonts stale-while-revalidate; hand-written fallback if Workbox can't load. |
+| HTTPS | Enforced on meme.zacsvae.com. |
+
+Still to do from phase 2: deploy the Cloudflare Worker (needs your Cloudflare login) and fill in `public/env.js`.
 
 ## Phase 3 — Native apps (Expo / React Native)
 

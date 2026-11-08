@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#15121f">
+<title>Privacy &amp; Safety — Meme Roulette</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<style>.doc{line-height:1.6}.doc h2{margin-top:1.6em;font-size:1.15rem;color:var(--accent)}.doc li{margin:.3em 0}.doc a{color:var(--accent)}</style>
+</head>
+<body>
+<div id="app"><div class="pad doc">
+<a class="back" href="./">‹ Back to the game</a>
+<h1>Privacy &amp; Safety</h1>
+<p class="muted">Last updated 8 November 2026</p>
+
+<p>Meme Roulette is a party game where players caption photos from each other's phones. Because the game shows personal photos to other people, every photo is opt-in, can be removed at any time, and is deleted when the game ends.</p>
+
+<h2>Photos</h2>
+<ul>
+<li><b>Purpose:</b> photos are used only to show them to the other players in your room.</li>
+<li><b>Opt-in:</b> only photos you confirm on the preview screen leave your phone.</li>
+<li><b>Prepared on your phone:</b> before anything is shared, each photo is resized and re-encoded on your device, which removes all metadata, including GPS location.</li>
+<li><b>Never on a server:</b> photos travel directly between players' phones over encrypted WebRTC connections. No server stores them. A relay (TURN) may pass encrypted data through when phones can't connect directly; it can't read it.</li>
+<li><b>Retention:</b> other phones keep your photos only in memory for that room. They are deleted when you leave, when the game ends, or when you remove a photo. Your "Saved stash" for the next game is stored only on your own device.</li>
+<li><b>Saving memes:</b> another player can only save a meme made from your photo if you approve it at that moment. No answer within 10 seconds counts as no.</li>
+</ul>
+
+<h2>Nudity is never allowed</h2>
+<ul>
+<li>An image classifier runs <b>on your phone</b> on the preview screen. Photos it flags as likely nudity are blocked and can't be shared, whatever the game settings.</li>
+<li>The classifier runs entirely on your device; your photos are never sent anywhere to be checked.</li>
+<li>Automated checks aren't perfect, so reporting is the second line of defence (below).</li>
+</ul>
+
+<h2>Reporting, hiding and removing</h2>
+<ul>
+<li>Long-press any photo to <b>Report</b> it, <b>Hide</b> it for yourself, or <b>Remove</b> your own photo from the game.</li>
+<li>Three reports, or the host, remove a photo from the game for everyone.</li>
+<li>Write-in captions are limited to 80 characters and filtered for slurs and profanity.</li>
+<li>The host can remove players; their photos leave the game immediately.</li>
+</ul>
+
+<h2>Other data</h2>
+<ul>
+<li><b>No accounts:</b> you join with a nickname and avatar, kept in your browser's local storage.</li>
+<li><b>Matchmaking:</b> to connect phones, a matchmaking service passes connection details (including network addresses) between players in the same room. It never receives game content or photos.</li>
+<li><b>Card statistics (if enabled):</b> at the end of a game, the host's phone may send anonymous counts of which caption cards were dealt, played and won. They never include photos, names, write-in captions or image links.</li>
+<li><b>No ads or tracking.</b></li>
+</ul>
+
+<h2>Age</h2>
+<p>Meme Roulette is for players 17 and older.</p>
+
+<h2>Contact</h2>
+<p>Questions, abuse reports or data requests: open an issue at <a href="https://github.com/null-newton/meme-roulette/issues">github.com/null-newton/meme-roulette/issues</a>.</p>
+</div></div>
+</body>
+</html>

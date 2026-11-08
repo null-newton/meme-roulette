@@ -7,6 +7,10 @@ const ICE = process.env.ICE_SERVERS ? JSON.parse(process.env.ICE_SERVERS) : [{ u
 function serve(req, res) {
   const u = new URL(req.url, 'http://x');
   if (u.pathname === '/config' && !process.env.STATIC_ONLY) return res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }), res.end(JSON.stringify({ iceServers: ICE }));
+  if (u.pathname === '/stats' && req.method === 'POST') {
+    let body = ''; req.on('data', c => { body += c; if (body.length > 65536) req.destroy(); });
+    return req.on('end', () => { try { const b = JSON.parse(body); if (b?.v === 1 && typeof b.cards === 'object') { fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true }); fs.appendFileSync(path.join(__dirname, 'data', 'stats.jsonl'), JSON.stringify({ t: Date.now(), deck: String(b.deck).slice(0, 40), cards: b.cards }) + '\n'); } } catch {} res.writeHead(204); res.end(); });
+  }
   const p = path.normalize(path.join(PUB, decodeURIComponent(u.pathname === '/' ? '/index.html' : u.pathname)));
   if (!p.startsWith(PUB)) return res.writeHead(403), res.end();
   fs.readFile(p, (e, d) => e ? (res.writeHead(404), res.end('Not found')) : (res.writeHead(200, { 'content-type': MIME[path.extname(p)] || 'application/octet-stream', 'cache-control': 'no-cache' }), res.end(d)));

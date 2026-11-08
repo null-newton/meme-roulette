@@ -19,7 +19,7 @@ The server prints its addresses. Open `http://localhost:8080` on this computer, 
 
 ## Hosting
 
-**Live:** https://meme.zacsvae.com (GitHub Pages, deployed from `public/` by `.github/workflows/pages.yml` on every push to `main`).
+**Live:** https://meme.zacsvae.com (HTTPS, GitHub Pages, deployed from `public/` by `.github/workflows/pages.yml` on every push to `main`).
 
 GitHub Pages only serves static files, so there the app signals through a public MQTT broker (`broker.emqx.io`, set in `public/net.js`) instead of `server.js`. The app picks this automatically when `config` isn't available. The broker only relays connection offers; game state and photos go phone to phone over encrypted WebRTC. Run `STATIC_ONLY=1 npm start` to test that mode locally.
 
@@ -40,8 +40,13 @@ GitHub Pages only serves static files, so there the app signals through a public
 | `public/engine.js` | Host-authoritative game engine (draws, deals, timers, scoring, modes). Any peer can run it after host migration. |
 | `public/app.js` | Screens, client logic, host takeover, reconnects, photo sharing, save-meme consent. |
 | `public/photos.js` | On-device photo filtering, resizing, WebP/JPEG encoding, saved stash (IndexedDB), meme rendering. |
-| `public/cards.js` | 400 original captions tagged Family / Standard / Spicy. |
-| `public/sw.js`, `manifest.webmanifest`, `icon.svg` | PWA shell. |
+| `public/decks/base.json` | 400 original captions tagged family / standard / spicy. Edit and push to update every game; bump `version`. |
+| `public/cards.js` | Loads the deck JSON. |
+| `public/vendor/nsfwjs/` | On-device nudity classifier (NSFWJS, MIT). Flagged photos are always blocked. |
+| `public/env.js` | Optional service URLs (managed TURN relay, card stats). Empty = off. |
+| `public/privacy.html` | Privacy & safety policy and contact. |
+| `public/sw.js`, `manifest.webmanifest`, `icon.svg` | PWA shell (Workbox service worker). |
+| `cloudflare/` | Optional Worker: TURN credentials, anonymous card stats. See its README. |
 
 ## Testing on one computer
 

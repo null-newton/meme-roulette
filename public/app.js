@@ -1,8 +1,9 @@
 // Meme Roulette client: screens, peer messaging, host takeover. The host phone runs engine.js; everyone mirrors its state.
 import { Net } from './net.js';
 import { Host, newState, eff, guessing, showOwner, canWrite, capText, active, livePool, MODES, MODE_INFO, MIN_PLAYERS, MIN_POOL } from './engine.js';
-import { CARDS } from './cards.js';
-import { processFiles, loadStash, saveStash, memeBlob } from './photos.js';
+import { loadDeck, DECK } from './cards.js';
+import { STATS_URL } from './env.js';
+import { processFiles, loadStash, saveStash, memeBlob, flagAll } from './photos.js';
 
 const $ = q => document.querySelector(q), root = $('#app');
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -12,7 +13,7 @@ const buzz = p => { try { navigator.userActivation?.hasBeenActive !== false && n
 const AVATARS = ['😎', '🤡', '🐸', '🦄', '🐶', '🐱', '👽', '🤖', '🦊', '🐼', '🍕', '🌮', '👻', '🐙', '🦖', '🥑', '🐧', '🔥'];
 const STATUS = { joined: 'Joined', choosing: 'Choosing photos', ready: 'Ready' };
 
-const A = { id: null, s: null, net: null, host: null, offset: 0, photos: new Map(), mine: new Set(), sent: new Map(), seen: '', mig: 0, pendingSave: null, bip: null };
+const A = { id: null, s: null, net: null, host: null, offset: 0, photos: new Map(), mine: new Set(), flagged: new Set(), sent: new Map(), seen: '', mig: 0, pendingSave: null, bip: null };
 const urlRoom = new URLSearchParams(location.search).get('room')?.toUpperCase() || '';
 const L = { view: ls.get('age17') ? 'home' : 'age', name: ls.get('name') || '', avatar: ls.get('avatar') || AVATARS[Math.random() * AVATARS.length | 0], code: urlRoom, status: 'joined', sel: -1, wtext: '', jv: 0, vv: 0, all: [], pick: [], sheet: null, menuPid: null, toast: '', busy: '', qr: false, stash: 0, consent: null, late: false, blocked: false };
 const hnow = () => Date.now() + A.offset;
@@ -26,6 +27,7 @@ function toast(msg) { L.toast = msg; render(); clearTimeout(toastT); toastT = se
 A.notify = (id, msg) => id === A.id ? toast(msg) : A.net.send(id, { t: 'toast', msg });
 A.broadcastState = () => { A.net.broadcast({ t: 'state', s: A.s, now: Date.now() }); afterState(); };
 A.pushPhoto = pushPhoto;
+A.reportStats = (deck, cards) => { if (!STATS_URL) return; try { navigator.sendBeacon(STATS_URL, JSON.stringify({ v: 1, deck, mode: A.s?.settings.mode, cards })); } catch {} };
 
 async function enter(code) {
   if (!L.name.trim()) return toast('Pick a nickname first');
@@ -41,7 +43,7 @@ function onJoined(m) {
   if (!A.s && m.host === A.id && !m.peers.length) { A.s = newState(m.code, A.id); A.host = new Host(A); hello(); }
   L.busy = m.peers.length ? 'Connecting to players…' : ''; render();
 }
-function hello() { intent({ a: 'hello', name: L.name, avatar: L.avatar, status: L.status, photos: [...A.mine] }); }
+function hello() { intent({ a: 'hello', name: L.name, avatar: L.avatar, status: L.status, photos: [...A.mine], flagged: [...A.flagged] }); }
 function intent(m) { if (A.host) A.host.intent(A.id, m); else if (A.s) A.net.send(A.s.hostId, { t: 'intent', m }); }
 function onMsg(from, m) {
   switch (m.t) {
@@ -128,7 +130,7 @@ function leave(silent) {
   if (!silent && A.s) intent({ a: 'leave' });
   const net = A.net, host = A.host; setTimeout(() => net?.close(), silent ? 0 : 300); host?.stop(); clearTimeout(A.mig); A.migOn = false;
   for (const p of A.photos.values()) URL.revokeObjectURL(p.url);
-  A.photos.clear(); A.mine.clear(); A.sent.clear(); Object.assign(A, { s: null, host: null, net: null });
+  A.photos.clear(); A.mine.clear(); A.flagged.clear(); A.sent.clear(); Object.assign(A, { s: null, host: null, net: null });
   Object.assign(L, { view: 'home', sheet: null, status: 'joined', code: '', all: [], pick: [], qr: false });
   history.replaceState(null, '', location.pathname); render();
 }
@@ -158,34 +160,40 @@ function saveMeme(pid, text) {
 function answerSave(ok) { const c = L.consent; if (!c) return; L.consent = null; A.net?.send(c.from, { t: 'saveRes', pid: c.pid, ok }); render(); }
 
 // ---------- photos ----------
-function samplePick() { const cap = A.s?.settings.perPlayer || 15, keep = L.all.filter(x => !x.drop); L.pick = keep.length > cap ? [...keep].sort(() => Math.random() - 0.5).slice(0, cap) : keep; }
+function samplePick() { const cap = A.s?.settings.perPlayer || 15, keep = L.all.filter(x => !x.drop && !x.flag); L.pick = [...(keep.length > cap ? [...keep].sort(() => Math.random() - 0.5).slice(0, cap) : keep), ...L.all.filter(x => x.flag)]; }
 async function handleFiles(files) {
   if (!files?.length) return;
   L.busy = 'Preparing photos…'; render();
   const { blobs, skipped } = await processFiles(files, (i, n) => { L.busy = `Preparing photos… ${i}/${n}`; render(); });
-  L.busy = ''; setPicked(blobs);
+  await setPicked(blobs);
   if (skipped) toast(`Skipped ${skipped} (screenshots, videos or unreadable files)`);
 }
-function setPicked(blobs) {
+// Runs the on-device nudity check; flagged photos start dropped and need an extra confirmation
+async function setPicked(blobs) {
   for (const x of L.all) URL.revokeObjectURL(x.url);
-  L.all = blobs.map(b => ({ blob: b, url: URL.createObjectURL(b), id: rid() })); samplePick();
+  L.busy = 'Running safety check…'; render();
+  const flags = await flagAll(blobs, (i, n) => { L.busy = `Running safety check… ${i}/${n}`; render(); });
+  L.busy = ''; L.unchecked = !flags && blobs.length > 0;
+  L.all = blobs.map((b, i) => ({ blob: b, url: URL.createObjectURL(b), id: rid(), flag: !!flags?.[i], drop: !!flags?.[i] })); samplePick();
   L.view = blobs.length ? 'preview' : 'picker'; render();
 }
+function toggleDrop(x) { if (x.flag) return toast('Blocked: this photo may contain nudity'); x.drop = !x.drop; }
 function confirmPhotos() {
   const chosen = L.pick.filter(x => !x.drop); if (!chosen.length) return toast('Keep at least one photo, or join caption-only');
   for (const pid of A.mine) if (!A.s.used.includes(pid)) { const p = A.photos.get(pid); p && URL.revokeObjectURL(p.url); A.photos.delete(pid); }
   A.mine.clear();
+  A.flagged = new Set(chosen.filter(x => x.flag).map(x => x.id));
   for (const x of chosen) { A.mine.add(x.id); A.photos.set(x.id, { blob: x.blob, url: URL.createObjectURL(x.blob) }); }
   for (const x of L.all) URL.revokeObjectURL(x.url);
   saveStash(chosen.map(x => x.blob)); sessionStorage.removeItem('mr-co-' + L.code); L.all = []; L.pick = []; L.status = 'ready'; L.view = 'room';
-  intent({ a: 'status', status: 'ready', photos: [...A.mine] }); buzz(30); render();
+  intent({ a: 'status', status: 'ready', photos: [...A.mine], flagged: [...A.flagged] }); buzz(30); render();
 }
 
 // ---------- views ----------
 const avatarRow = () => `<div class="avatars">${AVATARS.map(a => `<button class="av ${a === L.avatar ? 'on' : ''}" data-act="avatar" data-v="${a}">${a}</button>`).join('')}</div>`;
 function ageGate() {
   return `<div class="center pad"><div class="logo">🎰<span>Meme<br>Roulette</span></div>
-  ${L.blocked ? '<p class="muted">Sorry — Meme Roulette is for players 17 and over.</p>' : `<h2>Are you 17 or older?</h2><p class="muted">Players share real photos from their phones. This game is rated 17+.</p>
+  ${L.blocked ? '<p class="muted">Sorry — Meme Roulette is for players 17 and over.</p>' : `<h2>Are you 17 or older?</h2><p class="muted">Players share real photos from their phones. This game is rated 17+. <a href="privacy.html" class="lnk">Privacy &amp; safety</a></p>
   <button class="btn primary" data-act="age-ok">Yes, I'm 17+</button><button class="btn ghost" data-act="age-no">No</button>`}</div>`;
 }
 function home() {
@@ -200,11 +208,12 @@ function home() {
   <p class="hint">Got a QR code? Scan it with your camera app.</p>
   ${A.bip ? '<button class="btn ghost" data-act="install">📲 Install app</button>' : ios ? '<p class="hint">📲 Install: tap <b>Share</b> → <b>Add to Home Screen</b></p>' : ''}
   <details class="how"><summary>How to play</summary><ol><li>Everyone adds 10–30 photos from their phone.</li><li>Each round, one photo appears on every phone.</li><li>Play your funniest caption card. The judge picks the winner.</li><li>First to the target score wins. In Roulette, guess whose photo it is for a bonus point.</li></ol></details>
+  <p class="hint"><a href="privacy.html" class="lnk">Privacy &amp; safety</a> · No accounts, no ads. Photos never touch a server.</p>
   </div>`;
 }
 function lobby() {
   const s = A.s, st = s.settings, ps = Object.values(s.players).sort((a, b) => a.joinedAt - b.joinedAt), ready = ps.filter(active).length, pool = livePool(s).length;
-  const can = ready >= MIN_PLAYERS && pool >= MIN_POOL;
+  const can = ready >= MIN_PLAYERS && pool >= MIN_POOL && DECK.cards.length > 0;
   return `<div class="lobby pad">
   <div class="roomhead"><div><div class="lbl">Room code</div><div class="code">${s.code}</div></div>
   <div class="row-btns"><button class="btn sm" data-act="share">Share</button><button class="btn sm" data-act="qr">QR</button></div></div>
@@ -219,7 +228,7 @@ function lobby() {
   <div class="card"><div class="cardhead">Game settings ${isHost() ? '<button class="btn sm" data-act="settings">Edit</button>' : ''}</div>
     <div class="chips"><span class="chip">${MODES[st.mode]}</span><span class="chip">${st.fixed ? st.rounds + ' rounds' : eff(s).target + ' points to win'}</span><span class="chip">${eff(s).capT}s caption</span>${st.mode !== 'crowd' ? `<span class="chip">${eff(s).judgeT}s judge</span>` : ''}<span class="chip">${st.deck} deck</span><span class="chip">${st.swaps} hand swap${st.swaps === 1 ? '' : 's'}</span>${st.writeins !== 'off' && st.mode !== 'writein' ? `<span class="chip">write-ins: ${st.writeins}</span>` : ''}<span class="chip">owner: ${st.mode === 'roulette' ? 'guess it' : st.reveal}</span></div>
     <p class="muted small">${MODE_INFO[st.mode]}</p></div>
-  ${isHost() ? `<button class="btn primary big" data-act="start" ${can ? '' : 'disabled'}>Start game</button><p class="hint">${can ? 'Everyone ready? Go!' : `Need ${MIN_PLAYERS}+ ready players and ${MIN_POOL}+ photos (${ready} ready, ${pool} photos)`}</p>` : '<p class="hint">Waiting for the host to start…</p>'}
+  ${isHost() ? `<button class="btn primary big" data-act="start" ${can ? '' : 'disabled'}>Start game</button><p class="hint">${can ? 'Everyone ready? Go!' : !DECK.cards.length ? 'Loading caption cards…' : `Need ${MIN_PLAYERS}+ ready players and ${MIN_POOL}+ photos (${ready} ready, ${pool} photos)`}</p>` : '<p class="hint">Waiting for the host to start…</p>'}
   <button class="btn ghost" data-act="leave">Leave room</button></div>`;
 }
 function picker() {
@@ -233,12 +242,14 @@ function picker() {
   <button class="btn ghost" data-act="caption-only">Join with no photos</button></div>`;
 }
 function preview() {
-  const cap = A.s.settings.perPlayer, kept = L.pick.filter(x => !x.drop).length;
+  const cap = A.s.settings.perPlayer, kept = L.pick.filter(x => !x.drop).length, nf = L.all.filter(x => x.flag).length, clean = L.all.filter(x => !x.flag).length;
   return `<div class="pad"><button class="back" data-act="photos">‹ Pick again</button><h2>${kept} photo${kept === 1 ? '' : 's'}</h2>
-  <p class="muted small">Tap a photo to drop it.${L.all.length > cap ? ` You picked ${L.all.length}; we randomly chose ${cap}.` : ''}</p>
-  <div class="grid">${L.pick.map((x, i) => `<button class="thumb ${x.drop ? 'drop' : ''}" data-act="drop" data-i="${i}"><img src="${x.url}" alt=""></button>`).join('')}</div>
-  ${L.all.length > cap ? '<button class="btn" data-act="reroll">🎲 Re-roll picks</button>' : ''}
-  <div class="notice">👀 These photos will be shown to everyone in this room.</div>
+  <p class="muted small">Tap a photo to drop it.${clean > cap ? ` You picked ${clean}; we randomly chose ${cap}.` : ''}</p>
+  ${nf ? `<div class="notice warn">⚠️ ${nf} photo${nf === 1 ? '' : 's'} may contain nudity and ${nf === 1 ? 'was' : 'were'} blocked. Nude photos are never allowed.</div>` : ''}
+  ${L.unchecked ? '<div class="notice warn">The safety check couldn\'t load, so these photos weren\'t checked. Double-check them yourself.</div>' : ''}
+  <div class="grid">${L.pick.map((x, i) => `<button class="thumb ${x.drop ? 'drop' : ''} ${x.flag ? 'flag' : ''}" data-act="drop" data-i="${i}"><img src="${x.url}" alt=""></button>`).join('')}</div>
+  ${clean > cap ? '<button class="btn" data-act="reroll">🎲 Re-roll picks</button>' : ''}
+  <div class="notice">👀 These photos will be shown to everyone in this room. Nude photos are never allowed. <a href="privacy.html" class="lnk">Privacy</a></div>
   <button class="btn primary big" data-act="confirm">Confirm photos</button></div>`;
 }
 function late() {
@@ -269,13 +280,13 @@ function captionView() {
   const n = Object.keys(s.subs).length, tot = Object.values(s.players).filter(p => active(p) && p.id !== s.judge).length;
   if (before) return `<div class="getready"><div class="big-emoji">🎰</div><h2>Next photo…</h2>${judge ? '<p class="judge-badge">⚖️ You\'re the judge this round</p>' : ''}</div>`;
   if (judge) return `${memeView(s.photo, '')}${ownerTag()}<div class="panel center"><div class="judge-badge">⚖️ You're the judge</div><p>${n} / ${tot} captions in</p><p class="muted small">Sit back. You'll pick the funniest one.</p></div>`;
-  const selText = L.sel >= 0 && m.hand[L.sel] != null ? CARDS[m.hand[L.sel]][0] : L.wtext;
+  const selText = L.sel >= 0 && m.hand[L.sel] != null ? s.texts[m.hand[L.sel]] : L.wtext;
   if (sub) return `${memeView(s.photo, capText(sub))}${ownerTag()}<div class="panel center"><p class="done">✓ Caption played</p><p class="muted">${n} / ${tot} in${s.judge ? ` · ${esc(pname(s.judge))} is judging` : ''}</p>${guessChips()}</div>`;
   const write = canWrite(s, m), cards = s.settings.mode !== 'writein';
   return `${memeView(s.photo, selText)}${ownerTag()}
   ${guessChips()}
   ${write ? `<div class="write"><input id="wtext" maxlength="80" placeholder="${cards ? 'Or write your own caption…' : 'Write your caption…'}" value="${esc(L.wtext)}" autocomplete="off"><button class="btn primary sm" data-act="writein">Play</button></div>${cards && s.settings.writeins === 'one' ? '<p class="hint">1 write-in per game</p>' : ''}` : ''}
-  ${cards ? `<div class="hand" id="hand">${m.hand.map((c, i) => `<button class="ccard ${i === L.sel ? 'sel' : ''}" data-act="card" data-i="${i}">${esc(CARDS[c][0])}</button>`).join('')}</div>
+  ${cards ? `<div class="hand" id="hand">${m.hand.map((c, i) => `<button class="ccard ${i === L.sel ? 'sel' : ''}" data-act="card" data-i="${i}">${esc(s.texts[c] || '')}</button>`).join('')}</div>
   <div class="row-btns">${L.sel >= 0 ? '<button class="btn primary" data-act="play">Play this card</button>' : '<span class="hint">Tap a card to preview, tap again to play</span>'}${m.swaps < eff(s).swaps ? `<button class="btn ghost sm" data-act="swap">Swap hand (${eff(s).swaps - m.swaps})</button>` : ''}</div>` : ''}`;
 }
 function guessChips() {
@@ -401,9 +412,9 @@ const act = {
   share, qr: () => { L.qr = !L.qr; },
   photos: async () => { L.view = 'picker'; if (L.status !== 'ready') intent({ a: 'status', status: 'choosing' }); L.stash = (await loadStash()).length; render(); },
   back: () => { L.view = 'room'; if (L.status !== 'ready') intent({ a: 'status', status: 'joined' }); },
-  'caption-only': () => { for (const pid of A.mine) if (!A.s.used.includes(pid)) A.photos.delete(pid); A.mine.clear(); L.status = 'ready'; L.view = 'room'; sessionStorage.setItem('mr-co-' + L.code, '1'); intent({ a: 'status', status: 'ready', photos: [] }); },
+  'caption-only': () => { for (const pid of A.mine) if (!A.s.used.includes(pid)) A.photos.delete(pid); A.mine.clear(); A.flagged.clear(); L.status = 'ready'; L.view = 'room'; sessionStorage.setItem('mr-co-' + L.code, '1'); intent({ a: 'status', status: 'ready', photos: [] }); },
   stash: async () => setPicked(await loadStash()),
-  drop: d => { const x = L.pick[+d.i]; x.drop = !x.drop; },
+  drop: d => toggleDrop(L.pick[+d.i]),
   reroll: () => { samplePick(); },
   confirm: confirmPhotos,
   kick: d => { if (confirm(`Remove ${pname(d.id)} from the room?`)) intent({ a: 'kick', id: d.id }); },
@@ -460,4 +471,5 @@ root.addEventListener('touchend', e => {
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); A.bip = e; render(); });
 if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 window.__mr = { A, L }; // debug handle
+loadDeck().then(render).catch(() => toast("Couldn't load the caption cards. Check your connection."));
 if (urlRoom && L.view === 'home' && L.name && sessionStorage.getItem('mr-id-' + urlRoom)) enter(urlRoom); else render();

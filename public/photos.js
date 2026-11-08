@@ -17,6 +17,24 @@ export async function processFiles(files, onProgress) {
   for (let i = 0; i < ok.length; i++) { try { out.push(await processFile(ok[i])); } catch { skipped++; } onProgress?.(i + 1, ok.length); }
   return { blobs: out, skipped };
 }
+// On-device nudity classifier (NSFWJS MobileNetV2, self-hosted, lazy-loaded only when picking photos)
+let nsfw;
+const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+export const loadNsfw = () => nsfw ||= (async () => { const b = 'vendor/nsfwjs/'; await loadScript(b + 'model.min.js'); await loadScript(b + 'group1-shard1of1.min.js'); await loadScript(b + 'nsfwjs.min.js'); return window.nsfwjs.load('MobileNetV2'); })().catch(e => { nsfw = null; throw e; });
+export const isFlagged = s => (s.Porn || 0) + (s.Hentai || 0) >= 0.5 || (s.Sexy || 0) >= 0.9;
+// Returns class probabilities ({Neutral, Drawing, Sexy, Porn, Hentai}) for one photo
+export async function nsfwScores(blob) {
+  const m = await loadNsfw(), img = await createImageBitmap(blob), c = document.createElement('canvas');
+  c.width = c.height = 224; c.getContext('2d').drawImage(img, 0, 0, 224, 224); img.close?.();
+  return Object.fromEntries((await m.classify(c, 5)).map(p => [p.className, p.probability]));
+}
+// Flags each blob; returns null when the classifier can't load (e.g. offline on first use)
+export async function flagAll(blobs, onProgress) {
+  try { await loadNsfw(); } catch { return null; }
+  const out = [];
+  for (let i = 0; i < blobs.length; i++) { try { out.push(isFlagged(await nsfwScores(blobs[i]))); } catch { out.push(false); } onProgress?.(i + 1, blobs.length); }
+  return out;
+}
 const db = () => new Promise((res, rej) => { const r = indexedDB.open('meme-roulette', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 export async function saveStash(blobs) { try { const d = await db(); d.transaction('kv', 'readwrite').objectStore('kv').put(blobs, 'stash'); } catch {} }
 export async function loadStash() { try { const d = await db(); return await new Promise(r => { const q = d.transaction('kv').objectStore('kv').get('stash'); q.onsuccess = () => r(q.result || []); q.onerror = () => r([]); }); } catch { return []; } }

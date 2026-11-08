@@ -1,5 +1,5 @@
 // Host-authoritative round engine. Runs on whichever phone is host; every peer holds a mirror so any can take over.
-import { CARDS } from './cards.js';
+import { DECK, deckIds } from './cards.js';
 export const MODES = { classic: 'Classic', roulette: 'Roulette', crowd: 'Crowd vote', writein: 'Write-in', speed: 'Speed' };
 export const MODE_INFO = { classic: 'Rotating judge picks the funniest caption', roulette: 'Classic + guess whose photo it is (+1)', crowd: 'No judge — everyone votes, not for themselves', writein: 'Type your own captions instead of cards', speed: '20 s to caption, 15 s to judge, first to 5' };
 export const DEFAULTS = { mode: 'classic', target: 7, fixed: false, rounds: 15, capT: 45, judgeT: 30, perPlayer: 15, reveal: 'after', writeins: 'off', deck: 'standard', swaps: 1 };
@@ -7,14 +7,15 @@ const RULES = { mode: Object.keys(MODES), target: [3, 15], fixed: 'bool', rounds
 export const HAND = 7, MAX_PLAYERS = 10, MIN_PLAYERS = 3, MIN_POOL = 3;
 export const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 export const pick = a => a[Math.random() * a.length | 0];
-export const capText = c => c ? (c.text ?? CARDS[c.card]?.[0] ?? '') : '';
+export const capText = c => c?.text ?? '';
 export const eff = s => s.settings.mode === 'speed' ? { ...s.settings, capT: 20, judgeT: 15, target: 5, fixed: false } : s.settings;
 export const guessing = s => s.settings.mode === 'roulette';
 export const showOwner = (s, phase = s.phase) => guessing(s) ? ['result', 'over'].includes(phase) : s.settings.reveal === 'always' || (s.settings.reveal === 'after' && ['result', 'over'].includes(phase));
 export const canWrite = (s, p) => s.settings.mode === 'writein' || s.settings.writeins === 'unlimited' || (s.settings.writeins === 'one' && (p?.writeins || 0) < 1);
 export const active = p => p && p.online && p.status === 'ready';
-export const livePool = s => Object.keys(s.pool).filter(pid => !s.removed.includes(pid));
-export const newState = (code, hostId) => ({ code, hostId, epoch: 0, ver: 0, phase: 'lobby', settings: { ...DEFAULTS }, players: {}, order: [], judgeIdx: -1, round: 0, pool: {}, used: [], queue: [], drawn: {}, photo: null, owner: null, judge: null, subs: {}, guesses: {}, cands: [], view: 0, votes: {}, deadline: 0, revealAt: 0, result: null, best: [], deck: [], reports: {}, removed: [], kicked: [] });
+// Photos that can be drawn: not removed and never flagged for nudity (nude photos are never allowed)
+export const livePool = s => { const f = new Set(Object.values(s.players).flatMap(p => p.flagged || [])); return Object.keys(s.pool).filter(pid => !s.removed.includes(pid) && !f.has(pid)); };
+export const newState = (code, hostId) => ({ code, hostId, epoch: 0, ver: 0, phase: 'lobby', settings: { ...DEFAULTS }, players: {}, order: [], judgeIdx: -1, round: 0, pool: {}, used: [], queue: [], drawn: {}, photo: null, owner: null, judge: null, subs: {}, guesses: {}, cands: [], view: 0, votes: {}, deadline: 0, revealAt: 0, result: null, best: [], deck: [], deckVer: null, texts: {}, reports: {}, removed: [], kicked: [] });
 
 export function setSetting(st, k, v) {
   const r = RULES[k]; if (!r) return;
@@ -55,9 +56,9 @@ export class Host {
           s.players[from] = { id: from, name: cleanName(m.name), avatar: String(m.avatar || '🙂').slice(0, 4), status: 'joined', score: 0, hand: [], swaps: 0, writeins: 0, photos: [], online: true, off: 0, joinedAt: Date.now() };
           if (s.phase !== 'lobby') s.order.push(from);
         } else Object.assign(p, { online: true, off: 0, name: cleanName(m.name || p.name), avatar: String(m.avatar || p.avatar).slice(0, 4) });
-        this.setStatus(from, m.status, m.photos); break;
+        this.setStatus(from, m.status, m.photos, m.flagged); break;
       }
-      case 'status': this.setStatus(from, m.status, m.photos); break;
+      case 'status': this.setStatus(from, m.status, m.photos, m.flagged); break;
       case 'settings': if (isHost && s.phase === 'lobby') setSetting(s.settings, m.k, m.v); break;
       case 'kick': if (isHost && m.id !== from && s.players[m.id]) { s.kicked.push(m.id); this.app.net.send(m.id, { t: 'kicked' }); this.removePlayer(m.id); } break;
       case 'start': if (isHost && s.phase === 'lobby' && this.canStart()) this.startGame(); break;
@@ -71,7 +72,7 @@ export class Host {
           s.subs[from] = { text: t }; if (s.settings.mode !== 'writein') p.writeins++;
         } else {
           const i = p.hand.indexOf(m.card); if (i < 0 || s.settings.mode === 'writein') return;
-          p.hand.splice(i, 1); s.subs[from] = { card: m.card };
+          p.hand.splice(i, 1); s.subs[from] = { card: m.card, text: s.texts[m.card] }; this.stat(m.card, 'played');
         }
         if (this.allIn()) this.toJudging(); break;
       }
@@ -91,17 +92,17 @@ export class Host {
     this.commit();
   }
 
-  setStatus(id, status, photos) {
+  setStatus(id, status, photos, flagged) {
     const s = this.s, p = s.players[id]; if (!p) return;
     if (['joined', 'choosing', 'ready'].includes(status)) p.status = status;
     if (Array.isArray(photos)) {
       const list = photos.filter(x => typeof x === 'string' && x.length <= 16).slice(0, 30);
       for (const pid of p.photos) if (!list.includes(pid) && !s.used.includes(pid)) delete s.pool[pid];
       for (const pid of list) if (!s.pool[pid]) s.pool[pid] = id;
-      p.photos = list;
+      p.photos = list; p.flagged = Array.isArray(flagged) ? flagged.filter(x => list.includes(x)) : [];
     }
   }
-  canStart() { const s = this.s; return Object.values(s.players).filter(active).length >= MIN_PLAYERS && livePool(s).length >= MIN_POOL; }
+  canStart() { const s = this.s; return DECK.cards.length > 0 &&Object.values(s.players).filter(active).length >= MIN_PLAYERS && livePool(s).length >= MIN_POOL; }
   removePlayer(id) {
     const s = this.s; if (!s.players[id]) return;
     const i = s.order.indexOf(id); if (i >= 0) { s.order.splice(i, 1); if (i <= s.judgeIdx) s.judgeIdx--; }
@@ -118,19 +119,24 @@ export class Host {
   }
 
   startGame() {
-    const s = this.s, d = eff(s).deck, ok = r => d === 'family' ? r === 'f' : d === 'standard' ? r !== 'x' : true;
-    s.deck = shuffle(CARDS.map((c, i) => i).filter(i => ok(CARDS[i][1])));
-    Object.assign(s, { used: [], queue: [], best: [], round: 0, drawn: {}, judgeIdx: -1, order: shuffle(Object.keys(s.players)) });
+    const s = this.s; this.stats = {};
+    Object.assign(s, { deck: shuffle(deckIds(eff(s).deck)), deckVer: DECK.id + '@' + DECK.version, texts: {}, used: [], queue: [], best: [], round: 0, drawn: {}, judgeIdx: -1, order: shuffle(Object.keys(s.players)) });
     for (const p of Object.values(s.players)) Object.assign(p, { score: 0, hand: [], swaps: 0, writeins: 0 });
     this.startRound();
   }
+  // Deals up to 7 cards; card text rides along in state (s.texts) so peers never need the deck file
   fill(p) {
     const s = this.s;
     while (p.hand.length < HAND) {
-      if (!s.deck.length) { const held = new Set(Object.values(s.players).flatMap(x => x.hand)), d = eff(s).deck; s.deck = shuffle(CARDS.map((c, i) => i).filter(i => !held.has(i) && (d === 'spicy' || (d === 'family' ? CARDS[i][1] === 'f' : CARDS[i][1] !== 'x')))); if (!s.deck.length) return; }
-      p.hand.push(s.deck.pop());
+      if (!s.deck.length) { const held = new Set(Object.values(s.players).flatMap(x => x.hand)); s.deck = shuffle(deckIds(eff(s).deck).filter(id => !held.has(id))); if (!s.deck.length) return; }
+      const id = s.deck.pop(), c = DECK.byId.get(id); if (!c) continue;
+      p.hand.push(id); s.texts[id] = c.text; this.stat(id, 'dealt');
     }
   }
+  // Drops text for cards no longer in any hand to keep state small
+  pruneTexts() { const s = this.s, keep = new Set(Object.values(s.players).flatMap(p => p.hand)); for (const id in s.texts) if (!keep.has(id)) delete s.texts[id]; }
+  // Anonymous per-card counters for this game: dealt / played / won (no photos, names or write-in text)
+  stat(id, k) { if (!id) return; const c = (this.stats ||= {})[id] ||= { dealt: 0, played: 0, won: 0 }; c[k]++; }
   reachable(pid) { const o = this.s.pool[pid]; return !!o && (this.online(o) || this.app.photos.has(pid)); }
   // Picks a photo from the owner with the fewest draws so far, never repeating within a game
   drawOne() {
@@ -151,7 +157,7 @@ export class Host {
       do s.judgeIdx = (s.judgeIdx + 1) % s.order.length; while (!active(s.players[s.order[s.judgeIdx]]));
       s.judge = s.order[s.judgeIdx];
     }
-    for (const p of Object.values(s.players)) this.fill(p);
+    this.pruneTexts(); for (const p of Object.values(s.players)) this.fill(p);
     Object.assign(s, { phase: 'caption', subs: {}, guesses: {}, cands: [], votes: {}, view: 0, result: null, revealAt: Date.now() + 1500 });
     s.deadline = s.revealAt + e.capT * 1000;
     this.need(); this.arm(s.deadline);
@@ -177,7 +183,7 @@ export class Host {
   }
   finish(sid, votes) {
     const s = this.s, w = s.cands.find(c => c.sid === sid);
-    if (w && s.players[w.by]) s.players[w.by].score++;
+    if (w && s.players[w.by]) s.players[w.by].score++; if (w) this.stat(w.card, 'won');
     const right = guessing(s) ? Object.keys(s.guesses).filter(i => s.guesses[i] === s.owner && s.players[i]) : [];
     right.forEach(i => s.players[i].score++);
     s.result = { sid: w?.sid || null, by: w?.by || null, text: w ? capText(w) : null, votes: votes || null, right };
@@ -185,7 +191,7 @@ export class Host {
     s.phase = 'result'; s.deadline = Date.now() + 5000; this.arm(s.deadline);
   }
   next() { const s = this.s, e = eff(s), top = Math.max(0, ...Object.values(s.players).map(p => p.score)); (e.fixed ? s.round >= e.rounds : top >= e.target) ? this.over() : this.startRound(); }
-  over() { clearTimeout(this.t); Object.assign(this.s, { phase: 'over', deadline: 0 }); }
+  over() { clearTimeout(this.t); Object.assign(this.s, { phase: 'over', deadline: 0 }); if (this.stats && Object.keys(this.stats).length) this.app.reportStats?.(this.s.deckVer, this.stats); this.stats = null; }
   // Recomputes presence from open channels; drops players gone > 60 s and unsticks phases
   check() {
     const s = this.s, now = Date.now(); let ch = false;
